@@ -386,3 +386,12 @@ ros2 run demo_nodes_cpp listener
 ```
 
 Check that the published messages are in sync on the talker and listener without the need for a router.
+
+# Usage with IBSS
+
+
+
+
+
+
+# Usage with Batman
