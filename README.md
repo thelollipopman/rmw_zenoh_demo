@@ -388,10 +388,119 @@ ros2 run demo_nodes_cpp listener
 Check that the published messages are in sync on the talker and listener without the need for a router.
 
 # Usage with IBSS
+To use `rmw_zenoh` over IBSS, simply set the endpoints in the zenoh router and session config files to the correct IBSS IP addresses.
 
+### Setting up IBSS
 
+Thx to James for this part lol.
 
+To setup IBSS over wlan0, run the following code, replacing `<ssid>`, `<freq>`, `<ipaddr>` with values of your choice. Connected machines must be on the same SSID, MHz frequency (channel) and subnet with unique IP addresses. For the list of frequencies and corresponding channels to choose from, see the [wiki](https://en.wikipedia.org/wiki/List_of_WLAN_channels) (2.4 Ghz or 5 Ghz for raspberry pi and most machines). Note that if you are SSH'ed into your machine via a router, this will terminate your connection.
 
+```
+# Stop NetworkManager and wpa_supplicant so they don't switch wifi back to managed mode
+sudo systemctl stop NetworkManager
+sudo systemctl stop wpa_supplicant
 
+# Bring wlan0 interface down first in order to switch to IBSS mode
+sudo ip link set wlan0 down
+sudo iw wlan0 set type ibss
+sudo ip link set wlan0 up
 
-# Usage with Batman
+# Set the IBSS network SSID and frequency
+sudo iw wlan0 ibss join <ssid> <freq>
+
+# Assign the IBSS IP address
+sudo ip addr add <ipaddr> dev wlan0
+```
+
+Altenatively, download and run the [ibss-setup.sh](scripts/ibss-setup.sh) shell script. Be sure to check (and change if needed) the `IFACE`, `SSID`, `FREQ` and `IPADDR` variables. 
+
+To return wifi back to managed mode, run the following:
+```
+# Remove all ip addresses assigned to wlan0
+sudo ip addr flush dev wlan0
+
+# Return wlan0 to normal Wi-Fi client mode
+sudo ip link set wlan0 down
+sudo iw dev wlan0 set type managed
+sudo ip link set wlan0 up
+
+# Restart NetworkManager and wpa_supplicant since we stopped it earlier
+sudo systemctl start NetworkManager
+sudo systemctl start wpa_supplicant
+
+# Give control back to normal networking services
+sudo nmcli dev set "$IFACE" managed yes
+```
+
+Alternatively, run the [ibss-teardown.sh](scripts/ibss-teardown.sh) shell script.
+
+# Usage with B.A.T.M.A.N.
+Similarly, to use `rmw_zenoh` over BATMAN, simply set the endpoints in the zenoh router and session config files to the correct BATMAN IP addresses.
+
+### Setting up BATMAN
+Ensure `batctl`, the control tool for BATMAN, is installed:
+```
+sudo apt update
+sudo apt install batctl -y
+```
+
+To setup BATMAN over wlan0, run the following code, replacing `<ssid>`, `<freq>`, `<ipaddr>` with values of your choice:
+```
+# Stop NetworkManager and wpa_supplicant so they don't switch wifi back to managed mode
+sudo systemctl stop NetworkManager
+sudo systemctl stop wpa_supplicant
+
+# Load batman-adv
+sudo modprobe batman-adv
+
+# Clean the old config
+sudo ip link set bat0 down
+sudo batctl if del wlan0
+sudo ip addr flush dev wlan0
+sudo ip addr flush dev bat0
+
+# Bring wlan0 interface down first in order to switch to IBSS mode
+sudo ip link set wlan0 down
+sudo iw wlan0 set type ibss
+sudo ip link set wlan0 up
+
+# Set the IBSS network SSID and frequency
+sudo iw wlan0 ibss join <ssid> <freq>
+
+# Add wlan0 to BATMAN
+sudo batctl if add wlan0
+
+# Bring bat0 up
+sudo ip link set up dev bat0
+
+# Assign the BATMAN IP address
+sudo ip addr add <ipaddr> dev bat0
+```
+
+Altenatively, download and run the [ibss-batman-setup.sh](scripts/ibss-batman-setup.sh) shell script. Be sure to check (and change if needed) the `IFACE`, `SSID`, `FREQ` and `IPADDR` variables. 
+
+To return wifi to managed mode, run the following:
+```
+# Stop BATMAN virtual interface
+sudo ip link set bat0 down
+
+# Detach wlan0 from BATMAN
+sudo batctl if del wlan0
+
+# Clear IPs from BATMAN and Wi-Fi interfaces
+sudo ip addr flush dev bat0
+sudo ip addr flush dev wlan0
+
+# Return wlan0 to normal Wi-Fi client mode
+sudo ip link set wlan0 down
+sudo iw dev wlan0 set type managed
+sudo ip link set wlan0 up
+
+# Give control back to normal networking services
+sudo systemctl start NetworkManager
+sudo systemctl start wpa_supplicant
+sudo nmcli dev set wlan0 managed yes
+```
+
+Alternatively, run the [ibss-batman-teardown.sh](scripts/ibss-batman-teardown.sh) shell script.
