@@ -1,18 +1,46 @@
+# Table of Contents
+- [Understanding Zenoh and rmw_zenoh](#understanding-zenoh-and-rmw_zenoh)
+    - [Zenoh](#zenoh)
+    - [rmw_zenoh](#rmw_zenoh)
+    - [Config file parameters](#config-file-parameters)
+        - [mode](#mode)
+        - [connect](#connect)
+        - [listen](#listen)
+        - [scouting](#scouting)
+            - [multicast](#multicast)
+            - [gossip](#gossip)
+- [Demo](#demo)
+    - [Setup](#setup)
+        - [Docker](#docker)
+        - [rmw_zenoh](#rmw_zenoh-1)
+    - [Examples](#examples)
+        1. [routers and peers](#1-routers-and-peers)
+        2. [single router and client](#2-single-router-and-client)
+        3. [no routers and only multicast scouting](#3-no-routers-and-only-multicast-scouting)
+- [Using ad-hoc wifi](#using-ad-hoc-wifi)
+    - [Using IBSS](#using-ibss)
+    - [Using B.A.T.M.A.N.](#using-batman)
+- [Performance Testing](#performance-testing)
+
+
 # Understanding Zenoh and rmw_zenoh
 This section is mainly for constructing a mental model for understanding Zenoh and how rmw_zenoh implements it. Skip to the [demo](#demo) if needed. The content is based off the official docs for [Zenoh](https://zenoh.io/docs) and [rmw_zenoh](https://github.com/ros2/rmw_zenoh) (as well as conversations with an LLM :p). Note that `rmw_zenoh` implements Zenoh in a specific way with different default behaviours, so the terms `Zenoh` and `rmw_zenoh` will be used to distinguish wherever they differ. 
 
 ## Zenoh
-All Zenoh applications run as nodes, where their behaviours are configured in a json5 config file. Different communication models / topologies use different nodes. See their [docs](https://zenoh.io/docs/getting-started/deployment) for more info. All the available parameters for the config file can be found carefully documented in the [Zenoh default config file](https://github.com/eclipse-zenoh/zenoh/blob/main/DEFAULT_CONFIG.json5) and [rmw_zenoh config files](https://github.com/ros2/rmw_zenoh/tree/rolling/rmw_zenoh_cpp/config) comments, but the important ones will also be documented below.
+All Zenoh applications run as nodes, where their behaviours are configured in a `.json5` config file. Different communication models / topologies use different nodes. See their [docs](https://zenoh.io/docs/getting-started/deployment) for more info. All the available parameters for the config file can be found carefully documented in the [Zenoh default config file](https://github.com/eclipse-zenoh/zenoh/blob/main/DEFAULT_CONFIG.json5) and [rmw_zenoh config files](https://github.com/ros2/rmw_zenoh/tree/rolling/rmw_zenoh_cpp/config) comments, but the important ones will also be documented below.
 
 There are 2 ways to spawn a `Zenoh` node, both of which allow you to pass a config file:
 - `zenohd` executable. By default it spawns a router.
 - `Zenoh` library. By default it should use the [default config file](https://github.com/eclipse-zenoh/zenoh/blob/main/DEFAULT_CONFIG.json5) params. 
 
 ## rmw_zenoh
-`rmw_zenoh`, however, distinguishes between 2 types of config files:
-- router config file: used when spawning a `zenohd` router. 
-- session config file: used when running a ROS context.
+`rmw_zenoh`, however, distinguishes between 2 types of config files. Both accept the exact same parameters as a regular `Zenoh` config file, but `rmw_zenoh` chooses to use one or another depending on how the `Zenoh` node is spawned:
+- router config file: used when spawning a `zenohd` router node. Unless a custom router config file is specified, the [default](https://github.com/ros2/rmw_zenoh/blob/rolling/rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_ROUTER_CONFIG.json5) is used.
+- session config file: used when running a ROS context. When `rmw_zenoh` is specified as the ros middleware, spawning any ros node automatically spawns a Zenoh node configured by the session config file. Unless a custom session config file is specified, the [default](https://github.com/ros2/rmw_zenoh/blob/rolling/rmw_zenoh_cpp/config/DEFAULT_RMW_ZENOH_SESSION_CONFIG.json5) is used.
 
+
+## Config file parameters
+Some of the important parameters are documented below.
 
 ### mode
 Each node can run in one of 3 modes:
@@ -26,12 +54,12 @@ Each node can run in one of 3 modes:
 ```
 
 There are multiple ways for 2 nodes to communicate:
-- Directly connect on startup: One node initiates the connection through [connect](#connect) parameter, and the other listens through the [listen](#listen) parameter.
-- Through router(s): A router node (or a chain of router nodes) must connect to both nodes.
+- Directly connect on startup: One node initiates the connection to a reachable node through [connect](#connect) parameter, and the other listens through the [listen](#listen) parameter.
+- Through router(s): A router node (or a chain of router nodes) must connect both nodes.
 - Discovery through scouting (multicast/gossip): See [scouting](#scouting). Client nodes cannot participate in gossip scouting.
 
 ### connect
-On startup, the node attempts to connect to other nodes' endpoints, listed in `connect/endpoints` in the format `<protocol>/<ip address>:<port>`. Here, assigning static ip addresses is recommended, and port 7447 is the `rmw_zenoh` default. For the `rmw_zenoh` default config, peer and router nodes do not timeout, but client nodes have 0 retries and exit after failing to connect (see `connect/timeout_ms`, `connect/exit_after_failure` and `connect/retry` for more info). Hence, client nodes should only be started after their corresponding router (or peer) nodes. 
+On startup, the node attempts to connect to other nodes' endpoints, listed in `connect/endpoints` in the format `<protocol>/<ip address>:<port>`. Here, assigning static ip addresses is recommended, and the `rmw_zenoh` recommends using port 7447. 
 ```
 connect: {
   endpoints: [
@@ -39,11 +67,17 @@ connect: {
   ],
 }
 ```
-`rmw_zenoh` default: `zenohd` router doesn't connect to any endpoint on startup, while peers connect to `localhost:7447`.
+`rmw_zenoh` default: 
+- `zenohd` router doesn't connect to any endpoint on startup, while peers connect to `localhost:7447`.
+- peer and router nodes do not timeout, but client nodes have 0 retries and exit after failing to connect (see `connect/timeout_ms`, `connect/exit_after_failure` and `connect/retry` for more info). Hence, client nodes should only be started after their corresponding router (or peer) nodes.
 
 
 ### listen
-Similarly, on startup, the node listens to others' connection attempts on its own endpoints, listed in `listen/endpoints` in the format `<protocol>/<ip address>:<port>`. Again, port 7447 is the `rmw_zenoh` default. Use the wildcard address `tcp/[::]:7447` to listen on all interface addresses, i.e. loopback (localhost or 127.0.0.1), wlan0 (e.g. 192.168.1.23) and eth0 (e.g. 10.42.0.1). Use `tcp/<my_address>:0` to listen on all ports.
+Similarly, on startup, the node listens to others' connection attempts on its own endpoints, listed in `listen/endpoints` in the format `<protocol>/<ip address>:<port>`. Use `tcp/<my_address>:0` to listen on all ports. Use the wildcard address `tcp/[::]:7447` to listen on all interface addresses:
+- loopback address (localhost or 127.0.0.1)
+- wlan0 (e.g. 192.168.1.23)
+- eth0 (e.g. 10.42.0.1). 
+
 ```
 listen: {
   endpoints: [
@@ -51,12 +85,15 @@ listen: {
   ],
 }
 ```
-`rmw_zenoh` default: `zenohd` router listens on `localhost:7447`, while peers listen on `localhost:0` (all ports).
+`rmw_zenoh` default: 
+- `zenohd` router listens on `localhost:7447`.
+- peers listen on `localhost:0` (all ports).
 
 ### scouting
 Instead of explicitly setting endpoints for direct connections through the `connect` and `listen` parameters, nodes can discover one another via multicast or gossip (or both), and then autoconnect. If nodes communicated through an intermediate router node prior to discovery via scouting, they can open up direct peer to peer sessions to one another which persist even after the router is down. 
 
-To use multicast, set `scouting/multicast/enabled` to true so that the node joins the multicast group and discovers other nodes in the group. If `scouting/multicast/listen` is false, it is not discoverable by scout messages from other multicast nodes. `scouting/multicast/autoconnect` dictates what kind of multicast nodes it connects to. `scouting/multicast/autoconnect_strategy` controls strategy for autoconnection. If set to "always", it always attempts to autoconnect which may result in redundant connections. If set to "greater-zid", it will connect to a node with a lesser Zenoh id (see `id` for more info).
+#### multicast
+To use multicast, set `scouting/multicast/enabled` to true so that the node joins the multicast group and discovers other nodes in the group. If `scouting/multicast/listen` is false, it is not discoverable by scout multicast messages from other nodes. `scouting/multicast/autoconnect` dictates what kind of multicast nodes to connect to. `scouting/multicast/autoconnect_strategy` controls strategy for autoconnection. If set to "always", it always attempts to autoconnect which may result in redundant connections. If set to "greater-zid", it will connect to a node with a lesser Zenoh id (see `id` for more info).
 
 ```
 scouting: {
@@ -68,8 +105,11 @@ scouting: {
   }
 }
 ```
-`rmw_zenoh` default: multicast is not enabled, and if enabled, routers do not autoconnect to any node.
+`rmw_zenoh` default: 
+- `scouting/multicast/enabled` is false
+- if `scouting/multicast` is enabled, routers do not autoconnect to any node.
 
+#### gossip
 To use gossip, set `scouting/gossip/enabled` to true. Then the node can:
 - send gossip messages about any connected node to any other connected node. These 2 nodes may then discover and autoconnect to each other, provided their target/autoconnect
 settings allow it and the advertised endpoints are reachable. `scouting/gossip/target` controls which nodes to send the gossip messages to. If `scouting/gossip/multihop` is true, the node will relay gossip messages it receives. Otherwise it only relays its own gossip messages about its directly connected nodes. 
@@ -90,7 +130,12 @@ scouting: {
 
 
 
-# Setup
+
+# Demo
+The demo runs the demo talker and listener nodes from [demo_nodes_cpp](https://index.ros.org/p/demo_nodes_cpp/) using [rmw_zenoh](https://github.com/ros2/rmw_zenoh) as middleware. It uses 2 Raspberry Pi's on the same network, running ROS2 Kilted with Docker, but should also work for any 2 hosts on the same network.
+
+## Setup
+### Docker
 Ensure [Docker](https://docs.docker.com/engine/install/) is installed 
 
 Pull any of the [official ROS2 images](https://hub.docker.com/r/osrf/ros) and run a container interactively in host mode. This demo uses `ros:kilted-ros-core` and names the container "demo":
@@ -104,10 +149,7 @@ In the Docker container, follow the instructions to install [rmw_zenoh](https://
 sudo apt update && sudo apt install ros-kilted-rmw-zenoh-cpp
 ```
 
-# Demo
-The demo runs the demo talker and listener nodes from [demo_nodes_cpp](https://index.ros.org/p/demo_nodes_cpp/) using [rmw_zenoh](https://github.com/ros2/rmw_zenoh) as middleware. It uses 2 Raspberry Pi's on the same network, running ROS2 Kilted with Docker, but should also work for any 2 hosts on the same network.
-
-### Setup
+### rmw_zenoh
 When opening any new terminal, do the following:
 
 - Source ROS. Source your base ROS (replace \<DISTRO\> with your ROS distro) if you installed the `rmw_zenoh` binaries, but if you built rmw_zenoh from source in your workspace, then source the `setup.bash` from the workspace instead.
@@ -135,8 +177,8 @@ export ZENOH_SESSION_CONFIG_URI=path/to/my/session_config.json5
 ```
 If a config file is written from scratch with just the desired modified parameters, unspecified parameters may fall back to `Zenoh` instead of `rmw_zenoh` default values, hence the rationale for modifying from the `rmw_zenoh` default config files.
 
-For the following demos, you can create a copy of the default config files and change only the parameters described, or download the [modified config files](./demo_configs/) directly. Be sure to change the IP addresses to your hosts' actual addresses.
-
+## Examples
+For the following demo examples, you can create a copy of the default config files and change only the parameters described, or download the [modified config files](./demo_configs/) directly. Be sure to change the IP addresses to your hosts' actual addresses.
 
 ### 1. Routers and peers
 This is the standard configuration for `rmw_zenoh`, as prescribed by the default config files:
@@ -490,10 +532,9 @@ ros2 run demo_nodes_cpp listener
 
 Check that the published messages are in sync on the talker and listener without the need for a router.
 
-# Usage with IBSS
+# Using ad-hoc wifi 
+## Using IBSS
 To use `rmw_zenoh` over IBSS, simply ensure that the `connect\endpoints` and `listen\endpoints` parameters in the zenoh router and session config files are set to the correct IBSS IP addresses.
-
-### Setting up IBSS
 
 Thx to James for this part lol.
 
@@ -538,10 +579,9 @@ sudo nmcli dev set "$IFACE" managed yes
 
 Alternatively, run the [ibss-teardown.sh](./ibss_batman_scripts/ibss-teardown.sh) shell script.
 
-# Usage with B.A.T.M.A.N.
+## Using B.A.T.M.A.N.
 Similarly, to use `rmw_zenoh` over BATMAN, simply set the endpoints in the zenoh router and session config files to the correct BATMAN IP addresses.
 
-### Setting up BATMAN
 Ensure `batctl`, the control tool for BATMAN, is installed:
 ```
 sudo apt update
@@ -608,12 +648,59 @@ sudo nmcli dev set wlan0 managed yes
 
 Alternatively, run the [ibss-batman-teardown.sh](./ibss_batman_scripts/ibss-batman-teardown.sh) shell script.
 
-Useful batctl commands:
+Useful batctl commands for checking the underlying BATMAN mesh topology:
 ```
-# See direct neighbours
+# See only direct neighbours
 sudo batctl neighbors
 
-# See all reachable hosts, including those reachable by multihop
+# See all originators, i.e. including hosts reachable by multihop
 sudo batctl originators
-
 ```
+
+To verify that multihop is being used between 2 hosts in a B.A.T.M.A.N. physically separate them until they see each other as neighbours but not originators.
+
+# Performance Testing
+Latency and bandwith were tested to compare different hardware setups (B.A.T.M.A.N. vs router) and ros middleware setups (rmw_zenoh vs rmw_fastdds).
+
+## B.A.T.M.A.N.
+This was purely intended to test the connectivity of a B.A.T.M.A.M. mesh network, and hence `rmw_zenoh` wasn't tested.
+
+
+### Latency
+`socketperf` was used to measure TCP roundtrip latency
+
+Run the following on the chosen host to start the server on port 11111
+```
+sockperf server --tcp -p 11111
+```
+
+Run the following on the chosen host to start the client on port 11111 and begin a 30 second test
+```
+sockperf ping-pong --tcp -i <server-ip-address> -p 11111 -t 30 --full-rtt
+```
+
+| Server | Client | Latency (ms) | 
+| ------ | ------ | ------------ |
+| Pi2    |   Pi3  |     1.615    |
+
+### Bandwidth
+
+Run the following on the chosen host to start the server
+```
+iperf3 -s
+```
+
+Run the following on the chosen host ot start the client and begin a 30 second bidirectional test
+```
+iperf3 -c <server-ip-address> -t 30 --bidir
+```
+
+| Setup | Sender Bitrate (Mbits/sec)| Receiver Bitrate (Kbits/sec)|
+| ----- | ------------------------- | --------------------------- |
+| 2 Raspberry Pi's connected via wifi router  | 73200 | 72600 |
+| 2 Raspberry Pi's connected via B.A.T.M.A.N. |  305  |  199  |
+| 2 |
+
+
+
+## rmw_zenoh
