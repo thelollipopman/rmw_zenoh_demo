@@ -189,7 +189,6 @@ This is the standard configuration for `rmw_zenoh`, as prescribed by the default
 ```mermaid
 flowchart TD
   subgraph h2 [Host 2]
-    direction TD
     idr2(router 2)
     idp3(peer 3) 
     idp4(peer 4)
@@ -200,7 +199,6 @@ flowchart TD
     idp3<--after discovery through router 2-->idp4
   end
   subgraph h1 [Host 1]
-    direction TD
     idr1(router 1)
     idp1(peer 1) 
     idp2(peer 2)
@@ -235,52 +233,7 @@ flowchart TD
     class idp1,idp2,idp3,idp4 peer;
 ```
 
-We test a simplified version of this configuration with the `demo_nodes_cpp` talker and listener as such:
-
-```mermaid
-flowchart TD
-  subgraph h2 [Host 2]
-    direction TD
-    idr2(router 2)
-    idp3(listener) 
-    idr2<-->idp3
-    idr2<-.->idp3
-  end
-  subgraph h1 [Host 1]
-    direction TD
-    idr1(router 1)
-    idp1(talker) 
-    idp2(listener)
-    idr1<-->idp1
-    idr1<-.->idp1 
-    idr1<-->idp2
-    idr1<-.->idp2
-    idp1<--after discovery through router 1-->idp2
-  end
-  idr2<-->idr1
-  LH1(( ))
-  RH1(( transport ))
-  LH2(( ))
-  RH2(( discovery ))
-  subgraph legend [Legend]
-    direction LR
-    LH1<-->RH1
-    LH2<-.->RH2
-    RH1~~~LH2
-  end
-
-  legend~~~h1
-  legend~~~h2
-
-  classDef hidden fill:#00000000,stroke:#00000000,width:0px,height:0px;
-  classDef router fill:#b8a6d9,stroke:#333,stroke-width:1px,color:#000;
-  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
-  classDef legend fill:#fff,stroke:#999,stroke-width:1px,color:#000;
-  classDef invisible fill:none, stroke:none, color:transparent;
-    class LH1,RH1,LH2,RH2 hidden;
-    class idr1,idr2 router;
-    class idp1,idp2,idp3 peer;
-```
+We test a simplified version of this configuration running the `demo_nodes_cpp` talker as peer 1 and running listeners as peers 2 and 3 (no peer 4).
 
 The only required change is to make `host 1` and `host 2` connect to each other's address on port 7447 startup. Technically this is redundant since only either `host 1` or `host 2` needs to initiate the connection while the other just listens. By default their `listen/endpoints` parameter is listening on all interface addresses on port 7447 already, so no changes are needed.
 
@@ -532,7 +485,7 @@ ros2 run demo_nodes_cpp listener
 
 Check that the published messages are in sync on the talker and listener without the need for a router.
 
-# Using ad-hoc wifi 
+# Using ad-hoc wifi mesh network
 ## Using IBSS
 To use `rmw_zenoh` over IBSS, simply ensure that the `connect\endpoints` and `listen\endpoints` parameters in the zenoh router and session config files are set to the correct IBSS IP addresses.
 
@@ -663,44 +616,66 @@ To verify that multihop is being used between 2 hosts in a B.A.T.M.A.N. physical
 Latency and bandwith were tested to compare different hardware setups (B.A.T.M.A.N. vs router) and ros middleware setups (rmw_zenoh vs rmw_fastdds).
 
 ## B.A.T.M.A.N.
-This was purely intended to test the connectivity of a B.A.T.M.A.M. mesh network, and hence `rmw_zenoh` wasn't tested.
+This was purely intended to test the connectivity of a B.A.T.M.A.M. mesh network, and hence `rmw_zenoh` wasn't tested. See [below]() for 
+
+### Setup 
 
 
 ### Latency
-`socketperf` was used to measure TCP roundtrip latency
+To measure TCP roundtrip latency, we use [`sockperf`](https://github.com/mellanox/sockperf), a network benchmarking utility with low overhead. To install `sockperf`:
+```
+sudo apt update
+sudo apt install -y sockperf
+```
 
 Run the following on the chosen host to start the server on port 11111
 ```
 sockperf server --tcp -p 11111
 ```
 
-Run the following on the chosen host to start the client on port 11111 and begin a 30 second test
+Run the following on the chosen host to start the client on port 11111 and begin a 30 second test to measure full round trip time. Ping Pong mode is used to measure single packet latency.
 ```
 sockperf ping-pong --tcp -i <server-ip-address> -p 11111 -t 30 --full-rtt
 ```
 
-| Server | Client | Latency (ms) | 
-| ------ | ------ | ------------ |
-| Pi2    |   Pi3  |     1.615    |
+The results were as follow: 
+| Client | Server | Network | Avg Latency (ms) | 
+| :----: | :----: | :-----: | :----------: |
+|  Pi2   |  Pi3   | Router  |     1.615    |
+|  Pi2   |  Pi3   | BATMAN  |     4.918    |
+|  Pi1   |  Pi3   | BATMAN  |     4.906    |
+|  Pi1   |  Pi3   | BATMAN  |     3.190*   |
+*Dual High Gain Antennas deployed on Pi2
 
 ### Bandwidth
+To measure maximum achievable TCP  bandwidth, we use [`iperf3`](https://github.com/esnet/iperf), which can be installed via:
+```
+sudo apt update
+sudo apt install -y iperf3
+```
 
 Run the following on the chosen host to start the server
 ```
 iperf3 -s
 ```
 
-Run the following on the chosen host ot start the client and begin a 30 second bidirectional test
+Run the following on the chosen host to start the client and start a 30 second bidirectional test 
 ```
 iperf3 -c <server-ip-address> -t 30 --bidir
 ```
 
-| Setup | Sender Bitrate (Mbits/sec)| Receiver Bitrate (Kbits/sec)|
-| ----- | ------------------------- | --------------------------- |
-| 2 Raspberry Pi's connected via wifi router  | 73200 | 72600 |
-| 2 Raspberry Pi's connected via B.A.T.M.A.N. |  305  |  199  |
-| 2 |
-
-
+The results were as follow. Upload and download speeds are measured in terms of bitrate (Megabits/sec): 
+| Client | Server | Network | Client Upload | Server Download | Server Upload | Client Download |
+| :----: | :----: | :----:  | :-----------: | :-------------: | :-----------: | :-------------: |
+| Pi2    | Pi3    | Router  | 15.9          | 15.1            | 47.8          | 46.7            |
+| Pi2    | Pi3    | BATMAN  | 0.0961        | 0.0693          | 0.245         | 0.267          |
+| Pi1    | Pi3    | BATMAN  | 0.203         | 0.138           | 0.210         | 0.142          |
+| Pi1    | Pi3    | BATMAN  | 0.200*        | 0.138*          | 0.979*        | 0.858*         |
+*Dual High Gain Antennas deployed on Pi2
 
 ## rmw_zenoh
+
+publisher
+
+The results were as follow:
+| Publisher | Subscriber | RMW | Configuration | Bandwidth (MB/s) |
