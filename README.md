@@ -339,11 +339,9 @@ As per the [docs](https://github.com/ros2/rmw_zenoh#connecting-to-the-zenoh-rout
 ```mermaid
 flowchart TD
   subgraph h2 [Host 2]
-    direction TD
     idc1(client 1)
   end
   subgraph h1 [Host 1]
-    direction TD
     idr1(router 1)
     idp1(peer 1) 
     idp2(peer 2)
@@ -416,20 +414,24 @@ This fully peer to peer configuration may be desirable for lower latency for sma
 ```mermaid
 flowchart TD
   subgraph h2 [Host 2]
-    direction TD
     idp3(peer 3) 
     idp4(peer 4)
+    idp3<-.->idp4
     idp3<-->idp4
   end
   subgraph h1 [Host 1]
-    direction TD
     idp1(peer 1) 
     idp2(peer 2)
+    idp1<-.->idp2
     idp1<-->idp2
   end
+  idp1<-.->idp3
   idp1<-->idp3
+  idp4<-.->idp2
   idp4<-->idp2
+  idp2<-.->idp3
   idp2<-->idp3
+  idp4<-.->idp1
   idp4<-->idp1
   
   LH1(( ))
@@ -491,7 +493,7 @@ To use `rmw_zenoh` over IBSS, simply ensure that the `connect\endpoints` and `li
 
 Thx to James for this part lol.
 
-To setup IBSS over wlan0, run the following code, replacing `<ssid>`, `<freq>`, `<ipaddr>` with values of your choice. Connected machines must be on the same SSID, MHz frequency (channel) and subnet with unique IP addresses. For the list of frequencies and corresponding channels to choose from, see the [wiki](https://en.wikipedia.org/wiki/List_of_WLAN_channels) (2.4 Ghz or 5 Ghz for raspberry pi and most machines). Note that if you are SSH'ed into your machine via a router, this will terminate your connection.
+To setup IBSS over an interface (e.g. wlan0), run the following code, replacing `<iface>`,`<ssid>`, `<freq>`, `<ipaddr>` with values of your choice. Hosts which need to connect on the IBSS network must be on the same SSID, MHz frequency (channel) and subnet, with their own unique IP addresses. For the list of frequencies and corresponding channels to choose from, see the [wiki](https://en.wikipedia.org/wiki/List_of_WLAN_channels) (2.4 Ghz or 5 Ghz for raspberry pi and most machines). Note that if you are SSH'ed into your machine on the same interface you are setting up IBSS on (e.g. wlan0), this will terminate your connection. To continue establishing an SSH connection, you can set up your machine to join the ibss network, or SSH via an ethernet cable.
 
 ```
 # Stop NetworkManager and wpa_supplicant so they don't switch wifi back to managed mode
@@ -499,28 +501,28 @@ sudo systemctl stop NetworkManager
 sudo systemctl stop wpa_supplicant
 
 # Bring wlan0 interface down first in order to switch to IBSS mode
-sudo ip link set wlan0 down
-sudo iw wlan0 set type ibss
-sudo ip link set wlan0 up
+sudo ip link set <interface> down
+sudo iw <interface> set type ibss
+sudo ip link set <interface> up
 
 # Set the IBSS network SSID and frequency
-sudo iw wlan0 ibss join <ssid> <freq>
+sudo iw <interface> ibss join <ssid> <freq>
 
 # Assign the IBSS IP address
-sudo ip addr add <ipaddr> dev wlan0
+sudo ip addr add <ipaddr> dev <interface>
 ```
 
 Altenatively, download and run the [ibss-setup.sh](./ibss_batman_scripts/ibss-setup.sh) shell script. Be sure to check (and change if needed) the `IFACE`, `SSID`, `FREQ` and `IPADDR` variables. 
 
 To return wifi back to managed mode, run the following:
 ```
-# Remove all ip addresses assigned to wlan0
-sudo ip addr flush dev wlan0
+# Remove all ip addresses assigned to interface (e.g. wlan0)
+sudo ip addr flush dev <iface>
 
-# Return wlan0 to normal Wi-Fi client mode
-sudo ip link set wlan0 down
-sudo iw dev wlan0 set type managed
-sudo ip link set wlan0 up
+# Return interface (e.g. wlan0) to normal Wi-Fi client mode
+sudo ip link set <iface> down
+sudo iw dev <iface> set type managed
+sudo ip link set <iface> up
 
 # Restart NetworkManager and wpa_supplicant since we stopped it earlier
 sudo systemctl start NetworkManager
@@ -541,7 +543,7 @@ sudo apt update
 sudo apt install batctl -y
 ```
 
-To setup BATMAN over wlan0, run the following code, replacing `<ssid>`, `<freq>`, `<ipaddr>` with values of your choice:
+To setup BATMAN over a chosen interface (e.g. wlan0), run the following code, replacing `<iface>`, `<ssid>`, `<freq>`, `<ipaddr>` with values of your choice:
 ```
 # Stop NetworkManager and wpa_supplicant so they don't switch wifi back to managed mode
 sudo systemctl stop NetworkManager
@@ -552,20 +554,20 @@ sudo modprobe batman-adv
 
 # Clean the old config
 sudo ip link set bat0 down
-sudo batctl if del wlan0
-sudo ip addr flush dev wlan0
+sudo batctl if del <iface>
+sudo ip addr flush dev <iface>
 sudo ip addr flush dev bat0
 
-# Bring wlan0 interface down first in order to switch to IBSS mode
-sudo ip link set wlan0 down
-sudo iw wlan0 set type ibss
-sudo ip link set wlan0 up
+# Bring interface (e.g. wlan0) down first in order to switch to IBSS mode
+sudo ip link set <iface> down
+sudo iw <iface> set type ibss
+sudo ip link set <iface> up
 
 # Set the IBSS network SSID and frequency
-sudo iw wlan0 ibss join <ssid> <freq>
+sudo iw <iface> ibss join <ssid> <freq>
 
-# Add wlan0 to BATMAN
-sudo batctl if add wlan0
+# Add interface (e.g. wlan0) to BATMAN
+sudo batctl if add <iface>
 
 # Bring bat0 up
 sudo ip link set up dev bat0
@@ -581,22 +583,22 @@ To return wifi to managed mode, run the following:
 # Stop BATMAN virtual interface
 sudo ip link set bat0 down
 
-# Detach wlan0 from BATMAN
-sudo batctl if del wlan0
+# Detach interface (e.g. wlan0) from BATMAN
+sudo batctl if del <iface>
 
 # Clear IPs from BATMAN and Wi-Fi interfaces
 sudo ip addr flush dev bat0
-sudo ip addr flush dev wlan0
+sudo ip addr flush dev <iface>
 
-# Return wlan0 to normal Wi-Fi client mode
-sudo ip link set wlan0 down
-sudo iw dev wlan0 set type managed
-sudo ip link set wlan0 up
+# Return interface (e.g. wlan0) to normal Wi-Fi client mode
+sudo ip link set <iface> down
+sudo iw dev <iface> set type managed
+sudo ip link set <iface> up
 
 # Give control back to normal networking services
 sudo systemctl start NetworkManager
 sudo systemctl start wpa_supplicant
-sudo nmcli dev set wlan0 managed yes
+sudo nmcli dev set <iface> managed yes
 ```
 
 Alternatively, run the [ibss-batman-teardown.sh](./ibss_batman_scripts/ibss-batman-teardown.sh) shell script.
@@ -675,7 +677,187 @@ The results were as follow. Upload and download speeds are measured in terms of 
 
 ## rmw_zenoh
 
-publisher
+This section seeks to compare bandwidth and latency between `rmw_zenoh` and `rmw_fastdds`. It simulates realistic conditions through replaying a ros bag of 3D lidar data and measuring bandwidth and delay through `ros2 topic` commands.
+
+### Setup
+The `rtp_01` dataset from the [NTU VIRAL Dataset](https://ntu-aris.github.io/ntu_viral_dataset/) was chosen. More of such 3D lidar datasets can be found at [
+Awesome-3D-LiDAR-Datasets](https://github.com/minwoo0611/Awesome-3D-LiDAR-Datasets). An   Ouster OS1-16 gen 1 was used, publishing [PointCloud2](https://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/PointCloud2.html) messages on the `/os1_cloud_node1/points` topic at 10Hz, with a message size of 1.57MB. The original ros bag has been reduced to contain just this topic and the first 80 seconds of recording. As the `.mcap` file size is 1.3GB in this modified ros bag, [installing Git LFS (Large File Storage)](https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage) is required.
+
+Since messages are plublished to `/os1_cloud_node1/points` with message size 1.57MB at 10Hz, the required bandwidth is 15.7 MB/s. We confirm this by testing the following topologies and comparing `rmw_fastdds` and `rmw_zenoh`. The recorded bandwidth and latency values can then serve as a baseline for further tests later. `ros2 bag play` spawns a publisher node (peer 1 in the diagram) and `ros2 topic` will spawn a subscriber node (peer 2 in the diagram):
+```mermaid
+
+flowchart LR
+  LH1(( ))
+  RH1(( transport ))
+  LH2(( ))
+  RH2(( discovery ))
+  subgraph legend [Legend]
+    direction LR
+    LH1<-->RH1
+    LH2<-.->RH2
+    RH1~~~LH2
+  end
+  classDef hidden fill:#00000000,stroke:#00000000,width:0px,height:0px;  
+  class LH1,RH1,LH2,RH2 hidden;
+```
+```mermaid
+---
+title: "Topology 1: rmw_fastdds"
+---
+flowchart LR
+  subgraph h1 [Host 1]
+    idp1(peer 1) 
+    idp2(peer 2)
+    idp1<-.multicast.->idp2
+    idp1<--->idp2
+  end
+
+  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
+
+  class idp1,idp2 peer;
+```
+```mermaid
+---
+title: "Topology 2: rmw_zenoh"
+---
+flowchart LR
+  subgraph h1 [Host 1]
+    idr1(router 1)
+    idp1(peer 1) 
+    idp2(peer 2)
+    idr1<-->idp1
+    idr1<-.gossip.->idp1 
+    idr1<-->idp2
+    idr1<-.gossip.->idp2
+    idp1<--after router 1 gossip discovery-->idp2
+  end
+
+  classDef router fill:#b8a6d9,stroke:#333,stroke-width:1px,color:#000;
+  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
+
+  class idr1 router;
+  class idp1,idp2 peer;
+```
+
+Create the subscriber node to measure bandwidth. We use a "best effort" QOS reliability setting as is common for 3D lidar data:
+```
+ros2 topic bw /os1_cloud_node1/points --qos-reliability best_effort
+```
+
+Note that we spawn the subscriber node first so that it will receive all messages from the start for a consistent and fair test. Play the ros bag with `qos_overrides.yaml` which uses "best effort" QOS reliability:
+```
+cd ./performance_testing
+ros2 bag play ./os1_cloud_node1/ --qos-profile-overrides-path qos_overrides.yaml
+```
 
 The results were as follow:
-| Publisher | Subscriber | RMW | Configuration | Bandwidth (MB/s) |
+
+| Topology | RMW | Bandwidth (MB/s) | Avg Delay (ms) |
+| :------: | :-: | :--------------: | :------------: |
+| 1        | rmw_fastdds | 15.77 | ? |
+| 2        | rmw_zenoh   | 15.73 |  ? |
+
+
+
+
+```mermaid
+---
+title: "Setup 3: rmw_fastdds"
+---
+flowchart LR
+  subgraph h1 [Host 1]
+    idp1(peer 1)
+  end
+
+  subgraph h2 [Host 2]
+    idp2(peer 2)
+  end
+
+  idp1<-.multicast.->idp2
+  idp1<--->idp2
+  
+  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
+
+  class idp1,idp2 peer;
+```
+```mermaid
+---
+title: "Setup 4: rmw_zenoh"
+---
+flowchart LR
+  subgraph h1 [Host 1]
+    idp1(peer 1)
+  end
+
+  subgraph h2 [Host 2]
+    idp2(peer 2)
+  end
+
+  idp1<-.multicast.->idp2
+  idp1<--->idp2
+  
+  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
+
+  class idp1,idp2 peer;
+```
+```mermaid
+---
+title: "Setup 5: rmw_zenoh"
+---
+flowchart LR
+  subgraph h1 [Host 1]
+    idp1(peer 1)
+    idr1(router 1)
+    idp1<-->idr1
+  end
+
+  subgraph h2 [Host 2]
+    idr2(router 2)
+    idp2(peer 2)
+    idr2<-->idp2
+  end
+
+  idr1<--->idr2
+  
+  classDef router fill:#b8a6d9,stroke:#333,stroke-width:1px,color:#000;
+  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
+
+  class idr1,idr2 router;
+  class idp1,idp2 peer;
+```
+```mermaid
+---
+title: "Setup 6: rmw_zenoh"
+---
+flowchart LR
+  subgraph h1 [Host 1]
+    idp1(peer 1)
+    idr1(router 1)
+    idp1<-->idr1
+  end
+
+  subgraph h2 [Host 2]
+    idc1(client 1)
+  end
+
+  idr1<--->idc1
+  
+  classDef router fill:#b8a6d9,stroke:#333,stroke-width:1px,color:#000;
+  classDef peer fill:#d9a6bf,stroke:#333,stroke-width:1px,color:#000;
+  classDef client fill:#328da8,stroke:#333,stroke-width:1px,color:#000;
+
+  class idr1 router;
+  class idp1 peer;
+  class idc1 client
+```
+
+The results were as follow:
+
+| Setup | RMW | Configuration | Bandwidth (MB/s) | Avg Delay (ms) |
+| :---: | :-: | :-----------: | :--------------: | :------------: |
+| 1     | rmw_fastdds | Same host | 15.77 | 8
+| 2     | rmw_zenoh   | Same host | 15.73 |
+| 3     | rmw_fastdds | Same host | 15.77 |
+| 4     | rmw_fastdds | Same host | 15.77 |
+| 5     | rmw_fastdds | Same host | 15.77 |
+| 6     | rmw_fastdds | Same host | 15.77 |
