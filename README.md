@@ -334,7 +334,7 @@ ros2 topic info /chatter
 
 
 ### 2. Single router and client
-As per the [docs](https://github.com/ros2/rmw_zenoh#connecting-to-the-zenoh-router-on-another-host), in some scenarios we want to connect to the Zenoh router on another host directly for better performance. For example, it's more efficient to connect to the Zenohd of a robot while running RViz remotely. 
+As per the [docs](https://github.com/ros2/rmw_zenoh#connecting-to-the-zenoh-router-on-another-host), in some scenarios we want to connect to the Zenoh router on another host directly for better performance. For example, it's more efficient to connect to the `zenohd` of a robot while running RViz remotely. 
 
 ```mermaid
 flowchart TD
@@ -752,10 +752,10 @@ ros2 bag play ./os1_cloud_node1/ --qos-profile-overrides-path qos_overrides.yaml
 
 The results were as follow:
 
-| Topology | RMW | Bandwidth (MB/s) | Avg Delay (ms) |
-| :------: | :-: | :--------------: | :------------: |
-| 1        | rmw_fastdds | 15.77 | ? |
-| 2        | rmw_zenoh   | 15.73 |  ? |
+| Topology | RMW | Host| Bandwidth (MB/s) | Avg Delay (ms) |
+| :------: | :-: | :-: | :--------------: | :------------: |
+| 1        | rmw_fastdds | 15.77 |  ?  | 
+| 2        | rmw_zenoh   | 15.73 |  ?  | drone demo
 
 
 
